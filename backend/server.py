@@ -225,6 +225,55 @@ class AIAnalysisService:
 
 ai_service = AIAnalysisService()
 
+# WebSocket Connection Manager for real-time notifications
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+        
+    async def connect(self, websocket: WebSocket, user_id: str):
+        await websocket.accept()
+        if user_id not in self.active_connections:
+            self.active_connections[user_id] = []
+        self.active_connections[user_id].append(websocket)
+        
+    def disconnect(self, websocket: WebSocket, user_id: str):
+        if user_id in self.active_connections:
+            self.active_connections[user_id].remove(websocket)
+            if not self.active_connections[user_id]:
+                del self.active_connections[user_id]
+    
+    async def send_personal_message(self, message: str, user_id: str):
+        if user_id in self.active_connections:
+            disconnected = []
+            for connection in self.active_connections[user_id]:
+                try:
+                    await connection.send_text(message)
+                except:
+                    disconnected.append(connection)
+            # Remove disconnected connections
+            for conn in disconnected:
+                self.active_connections[user_id].remove(conn)
+    
+    async def broadcast_to_admins(self, message: str):
+        # Send to all admin users (in a real app, you'd track admin user IDs)
+        admin_user_ids = ["admin_123"]  # Mock admin IDs
+        for admin_id in admin_user_ids:
+            await self.send_personal_message(message, admin_id)
+    
+    async def broadcast_all(self, message: str):
+        for user_connections in self.active_connections.values():
+            disconnected = []
+            for connection in user_connections:
+                try:
+                    await connection.send_text(message)
+                except:
+                    disconnected.append(connection)
+            # Remove disconnected connections
+            for conn in disconnected:
+                user_connections.remove(conn)
+
+manager = ConnectionManager()
+
 # Utility functions
 def prepare_for_mongo(data):
     """Prepare data for MongoDB storage"""
