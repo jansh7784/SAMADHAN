@@ -395,6 +395,8 @@ async def create_report(
         "title": title,
         "description": description,
         "location": location,
+        "latitude": latitude,
+        "longitude": longitude,
         "issue_type": ai_analysis["issue_type"],
         "priority": ai_analysis["priority"],
         "severity_score": ai_analysis["severity_score"],
@@ -421,6 +423,28 @@ async def create_report(
     )
     history_mongo = prepare_for_mongo(history.dict())
     await db.report_history.insert_one(history_mongo)
+    
+    # Send real-time notification to user
+    user_notification = {
+        "type": "report_created",
+        "message": f"Your report '{title}' has been submitted and analyzed",
+        "report_id": report.id,
+        "priority": ai_analysis["priority"],
+        "department": ai_analysis["department"]
+    }
+    await manager.send_personal_message(json.dumps(user_notification), user_id)
+    
+    # Send real-time notification to admins for high priority reports
+    if ai_analysis["priority"] >= 4:
+        admin_notification = {
+            "type": "high_priority_report",
+            "message": f"High priority report: {title}",
+            "report_id": report.id,
+            "priority": ai_analysis["priority"],
+            "location": location,
+            "department": ai_analysis["department"]
+        }
+        await manager.broadcast_to_admins(json.dumps(admin_notification))
     
     return {
         "report": report,
