@@ -62,6 +62,8 @@ class Report(BaseModel):
     description: str
     issue_type: str
     location: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str = "pending"  # pending, assigned, in_progress, resolved, closed
     priority: int = 1  # 1-5 scale
@@ -72,6 +74,8 @@ class ReportCreate(BaseModel):
     title: str
     description: str
     location: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     issue_type: Optional[str] = None
 
 class Attachment(BaseModel):
