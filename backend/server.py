@@ -185,18 +185,27 @@ class AIAnalysisService:
             # Get AI response
             response = await chat.send_message(user_message)
             
-            # Parse JSON response
+            # Parse JSON response - handle markdown code blocks
             try:
-                analysis = json.loads(response)
+                # Remove markdown code blocks if present
+                clean_response = response.strip()
+                if clean_response.startswith('```json'):
+                    clean_response = clean_response[7:]  # Remove ```json
+                if clean_response.endswith('```'):
+                    clean_response = clean_response[:-3]  # Remove ```
+                clean_response = clean_response.strip()
+                
+                analysis = json.loads(clean_response)
                 return analysis
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logging.error(f"JSON parsing failed for response: {response[:200]}... Error: {e}")
                 # Fallback if response is not proper JSON
                 return {
                     "department": "Public Works Department",
                     "issue_type": "general",
                     "priority": 2,
                     "severity_score": 0.5,
-                    "reasoning": "AI analysis failed, using default classification"
+                    "reasoning": f"AI analysis JSON parsing failed: {str(e)}"
                 }
                 
         except Exception as e:
