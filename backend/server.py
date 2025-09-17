@@ -337,6 +337,19 @@ async def initialize_departments():
         return {"message": f"Initialized {len(DEPARTMENTS)} departments"}
     return {"message": "Departments already initialized"}
 
+# WebSocket endpoint for real-time notifications
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    await manager.connect(websocket, user_id)
+    try:
+        while True:
+            # Keep connection alive
+            data = await websocket.receive_text()
+            # Echo back for connection testing
+            await websocket.send_text(f"Message received: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, user_id)
+
 # Report management
 @api_router.post("/reports")
 async def create_report(
@@ -344,6 +357,8 @@ async def create_report(
     description: str = Form(...),
     location: str = Form(...),
     user_id: str = Form(...),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
     issue_type: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None)
 ):
