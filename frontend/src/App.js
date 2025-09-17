@@ -1,52 +1,910 @@
-import { useEffect } from "react";
-import "./App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import './App.css';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
+// Mock user for demo - in real app this would come from authentication
+const MOCK_USER = {
+  id: "user_123",
+  name: "John Citizen",
+  email: "john@example.com",
+  role: "citizen"
+};
+
+const MOCK_ADMIN = {
+  id: "admin_123", 
+  name: "Admin User",
+  email: "admin@city.gov",
+  role: "admin"
+};
+
+// Utility Components
+const LoadingSpinner = () => (
+  <div className="flex justify-center items-center py-8">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+  </div>
+);
+
+const StatusBadge = ({ status }) => {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'assigned': return 'bg-blue-100 text-blue-800';
+      case 'in_progress': return 'bg-purple-100 text-purple-800';
+      case 'resolved': return 'bg-green-100 text-green-800';
+      case 'closed': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
+  return (
+    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(status)}`}>
+      {status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
+    </span>
+  );
+};
+
+const PriorityBadge = ({ priority }) => {
+  const getPriorityColor = (priority) => {
+    if (priority >= 4) return 'bg-red-100 text-red-800';
+    if (priority >= 3) return 'bg-orange-100 text-orange-800';
+    if (priority >= 2) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-green-100 text-green-800';
+  };
+
+  const getPriorityText = (priority) => {
+    if (priority >= 4) return 'High';
+    if (priority >= 3) return 'Medium';
+    if (priority >= 2) return 'Low';
+    return 'Very Low';
+  };
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
+    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(priority)}`}>
+      {getPriorityText(priority)}
+    </span>
+  );
+};
+
+// Header Component
+const Header = ({ currentUser, onSwitchUser, currentView, setCurrentView }) => (
+  <header className="bg-white shadow-sm border-b">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="flex justify-between items-center py-4">
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <div className="bg-blue-600 text-white p-2 rounded-lg">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-2m-2 0H7m5 0v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2m12-6V9a2 2 0 00-2-2h-2a2 2 0 00-2-2V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2" />
+              </svg>
+            </div>
+            <h1 className="text-xl font-bold text-gray-900">Civic Reporter</h1>
+          </div>
+          
+          {currentUser.role === 'citizen' && (
+            <nav className="flex space-x-4">
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  currentView === 'dashboard' 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => setCurrentView('report')}
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  currentView === 'report' 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Report Issue
+              </button>
+              <button
+                onClick={() => setCurrentView('profile')}
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  currentView === 'profile' 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                My Reports
+              </button>
+            </nav>
+          )}
+          
+          {currentUser.role === 'admin' && (
+            <nav className="flex space-x-4">
+              <button
+                onClick={() => setCurrentView('admin')}
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  currentView === 'admin' 
+                    ? 'bg-blue-100 text-blue-700' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Admin Dashboard
+              </button>
+            </nav>
+          )}
+        </div>
+        
+        <div className="flex items-center space-x-4">
+          <div className="text-right">
+            <div className="text-sm font-medium text-gray-900">{currentUser.name}</div>
+            <div className="text-xs text-gray-500 capitalize">{currentUser.role}</div>
+          </div>
+          <button
+            onClick={onSwitchUser}
+            className="bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-md text-sm font-medium text-gray-700"
+          >
+            Switch User
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+);
+
+// Dashboard Component
+const Dashboard = () => {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchDashboardStats();
+  }, []);
+
+  const fetchDashboardStats = async () => {
+    try {
+      const response = await axios.get(`${API}/dashboard/stats`);
+      setStats(response.data);
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Total Reports</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats?.total_reports || 0}</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Pending</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats?.pending_reports || 0}</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">In Progress</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats?.in_progress_reports || 0}</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Resolved</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats?.resolved_reports || 0}</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Resolved Issues */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-5 sm:p-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Recently Resolved Issues</h3>
+          {stats?.recent_resolved?.length > 0 ? (
+            <div className="space-y-4">
+              {stats.recent_resolved.slice(0, 5).map((report) => (
+                <div key={report.id} className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium text-gray-900">{report.title}</h4>
+                    <p className="text-sm text-gray-600">{report.location}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {report.issue_type} • Resolved
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <PriorityBadge priority={report.priority} />
+                    <StatusBadge status={report.status} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-center py-8">No resolved issues yet</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
 
-function App() {
+// Report Form Component
+const ReportForm = ({ currentUser }) => {
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    location: '',
+    issue_type: ''
+  });
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+
+    try {
+      const formDataToSend = new FormData();
+      formDataToSend.append('title', formData.title);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append('location', formData.location);
+      formDataToSend.append('user_id', currentUser.id);
+      if (formData.issue_type) {
+        formDataToSend.append('issue_type', formData.issue_type);
+      }
+      if (selectedImage) {
+        formDataToSend.append('image', selectedImage);
+      }
+
+      await axios.post(`${API}/reports`, formDataToSend, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      setSubmitted(true);
+      setFormData({
+        title: '',
+        description: '',
+        location: '',
+        issue_type: ''
+      });
+      setSelectedImage(null);
+      setImagePreview(null);
+    } catch (error) {
+      console.error('Error submitting report:', error);
+      alert('Error submitting report. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
+          <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-medium text-green-900 mb-2">Report Submitted Successfully!</h3>
+          <p className="text-green-700 mb-4">
+            Your issue has been reported and will be analyzed by our AI system for automatic routing to the appropriate department.
+          </p>
+          <button
+            onClick={() => setSubmitted(false)}
+            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-md font-medium"
+          >
+            Submit Another Report
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+    <div className="max-w-2xl mx-auto">
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-medium text-gray-900">Report a Civic Issue</h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Help improve your community by reporting issues. AI will automatically categorize and route your report.
+          </p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="px-6 py-4 space-y-6">
+          <div>
+            <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+              Issue Title *
+            </label>
+            <input
+              type="text"
+              name="title"
+              id="title"
+              required
+              value={formData.title}
+              onChange={handleInputChange}
+              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              placeholder="Brief description of the issue"
+            />
+          </div>
+          
+          <div>
+            <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+              Detailed Description *
+            </label>
+            <textarea
+              name="description"
+              id="description"
+              rows={4}
+              required
+              value={formData.description}
+              onChange={handleInputChange}
+              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              placeholder="Provide detailed information about the issue"
+            />
+          </div>
+          
+          <div>
+            <label htmlFor="location" className="block text-sm font-medium text-gray-700">
+              Location *
+            </label>
+            <input
+              type="text"
+              name="location"
+              id="location"
+              required
+              value={formData.location}
+              onChange={handleInputChange}
+              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              placeholder="Street address or landmark"
+            />
+          </div>
+          
+          <div>
+            <label htmlFor="image" className="block text-sm font-medium text-gray-700">
+              Upload Image (Optional)
+            </label>
+            <p className="text-xs text-gray-500 mb-2">AI will analyze the image to help categorize the issue</p>
+            <input
+              type="file"
+              name="image"
+              id="image"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+            {imagePreview && (
+              <div className="mt-2">
+                <img src={imagePreview} alt="Preview" className="max-w-xs rounded-lg shadow-sm" />
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={() => {
+                setFormData({
+                  title: '',
+                  description: '',
+                  location: '',
+                  issue_type: ''
+                });
+                setSelectedImage(null);
+                setImagePreview(null);
+              }}
+              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            >
+              Clear
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              {submitting ? 'Submitting...' : 'Submit Report'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// User Reports Component
+const UserReports = ({ currentUser }) => {
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchUserReports();
+  }, []);
+
+  const fetchUserReports = async () => {
+    try {
+      const response = await axios.get(`${API}/reports?user_id=${currentUser.id}`);
+      setReports(response.data);
+    } catch (error) {
+      console.error('Error fetching user reports:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-medium text-gray-900">My Reports</h2>
+          <p className="text-sm text-gray-600 mt-1">Track the status of your submitted issues</p>
+        </div>
+        
+        <div className="divide-y divide-gray-200">
+          {reports.length > 0 ? (
+            reports.map((report) => (
+              <div key={report.id} className="px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <h3 className="text-base font-medium text-gray-900">{report.title}</h3>
+                    <p className="text-sm text-gray-600 mt-1">{report.description}</p>
+                    <div className="flex items-center space-x-4 mt-2">
+                      <span className="text-xs text-gray-500">
+                        📍 {report.location}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        📋 {report.issue_type}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        📅 {new Date(report.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2 ml-4">
+                    <PriorityBadge priority={report.priority} />
+                    <StatusBadge status={report.status} />
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="px-6 py-8 text-center text-gray-500">
+              <p>No reports submitted yet</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Admin Dashboard Component
+const AdminDashboard = () => {
+  const [reports, setReports] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+
+  useEffect(() => {
+    fetchAdminData();
+  }, [selectedDepartment, selectedStatus]);
+
+  const fetchAdminData = async () => {
+    try {
+      const [reportsRes, deptRes, statsRes] = await Promise.all([
+        axios.get(`${API}/reports?department_id=${selectedDepartment}&status=${selectedStatus}`),
+        axios.get(`${API}/departments`),
+        axios.get(`${API}/dashboard/stats`)
+      ]);
+      
+      setReports(reportsRes.data);
+      setDepartments(deptRes.data);
+      setStats(statsRes.data);
+    } catch (error) {
+      console.error('Error fetching admin data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateReportStatus = async (reportId, newStatus) => {
+    try {
+      const formData = new FormData();
+      formData.append('new_status', newStatus);
+      formData.append('actor_id', MOCK_ADMIN.id);
+      formData.append('note', `Status updated to ${newStatus} by admin`);
+      
+      await axios.patch(`${API}/reports/${reportId}/status`, formData);
+      fetchAdminData(); // Refresh data
+    } catch (error) {
+      console.error('Error updating report status:', error);
+      alert('Error updating status');
+    }
+  };
+
+  if (loading) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">High Priority</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats?.high_priority?.length || 0}</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Pending</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats?.pending_reports || 0}</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">In Progress</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats?.in_progress_reports || 0}</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Resolved</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats?.resolved_reports || 0}</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white shadow rounded-lg p-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Filter Reports</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="department" className="block text-sm font-medium text-gray-700 mb-2">
+              Department
+            </label>
+            <select
+              name="department"
+              id="department"
+              value={selectedDepartment}
+              onChange={(e) => setSelectedDepartment(e.target.value)}
+              className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            >
+              <option value="">All Departments</option>
+              {departments.map((dept) => (
+                <option key={dept.id} value={dept.id}>{dept.name}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div>
+            <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-2">
+              Status
+            </label>
+            <select
+              name="status"
+              id="status"
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            >
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="assigned">Assigned</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Reports Table */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-medium text-gray-900">All Reports</h3>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {reports.map((report) => {
+                const department = departments.find(d => d.id === report.auto_routed_department_id);
+                return (
+                  <tr key={report.id}>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{report.title}</div>
+                        <div className="text-sm text-gray-500">{report.issue_type}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {report.location}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <PriorityBadge priority={report.priority} />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <StatusBadge status={report.status} />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {department ? department.name : 'Unassigned'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <select
+                        value={report.status}
+                        onChange={(e) => updateReportStatus(report.id, e.target.value)}
+                        className="text-xs border-gray-300 rounded-md"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="assigned">Assigned</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="closed">Closed</option>
+                      </select>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        
+        {reports.length === 0 && (
+          <div className="px-6 py-8 text-center text-gray-500">
+            <p>No reports found matching the selected criteria</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// User Switcher Component
+const UserSwitcher = ({ onSelectUser }) => (
+  <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="sm:mx-auto sm:w-full sm:max-w-md">
+      <div className="bg-blue-600 text-white p-3 rounded-lg w-fit mx-auto mb-6">
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-2m-2 0H7m5 0v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2m12-6V9a2 2 0 00-2-2h-2a2 2 0 00-2-2V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2" />
+        </svg>
+      </div>
+      <h2 className="text-center text-3xl font-extrabold text-gray-900">
+        Civic Reporter
+      </h2>
+      <p className="mt-2 text-center text-sm text-gray-600">
+        Choose your role to continue
+      </p>
+    </div>
+
+    <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+      <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 space-y-4">
+        <button
+          onClick={() => onSelectUser(MOCK_USER)}
+          className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          <div className="flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            Continue as Citizen
+          </div>
+        </button>
+        
+        <button
+          onClick={() => onSelectUser(MOCK_ADMIN)}
+          className="group relative w-full flex justify-center py-3 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          <div className="flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-2m-2 0H7m5 0v-2a2 2 0 00-2-2H8a2 2 0 00-2 2v2m12-6V9a2 2 0 00-2-2h-2a2 2 0 00-2-2V5a2 2 0 00-2-2H9a2 2 0 00-2 2v2" />
+            </svg>
+            Continue as Admin
+          </div>
+        </button>
+        
+        <div className="mt-6">
+          <div className="text-center text-xs text-gray-500">
+            Demo Mode - No real authentication required
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// Main App Component
+function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [currentView, setCurrentView] = useState('dashboard');
+
+  const handleUserSelect = (user) => {
+    setCurrentUser(user);
+    if (user.role === 'admin') {
+      setCurrentView('admin');
+    } else {
+      setCurrentView('dashboard');
+    }
+  };
+
+  const handleSwitchUser = () => {
+    setCurrentUser(null);
+    setCurrentView('dashboard');
+  };
+
+  if (!currentUser) {
+    return <UserSwitcher onSelectUser={handleUserSelect} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Header 
+        currentUser={currentUser} 
+        onSwitchUser={handleSwitchUser}
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+      />
+      
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div className="px-4 py-6 sm:px-0">
+          {currentUser.role === 'citizen' && currentView === 'dashboard' && <Dashboard />}
+          {currentUser.role === 'citizen' && currentView === 'report' && <ReportForm currentUser={currentUser} />}
+          {currentUser.role === 'citizen' && currentView === 'profile' && <UserReports currentUser={currentUser} />}
+          {currentUser.role === 'admin' && currentView === 'admin' && <AdminDashboard />}
+        </div>
+      </main>
     </div>
   );
 }
