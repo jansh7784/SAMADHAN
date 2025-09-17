@@ -34,6 +34,87 @@ const MOCK_ADMIN = {
   role: "admin"
 };
 
+// WebSocket Hook for real-time notifications
+const useWebSocket = (userId) => {
+  const ws = useRef(null);
+  
+  useEffect(() => {
+    if (!userId) return;
+    
+    // Connect to WebSocket
+    ws.current = new WebSocket(`${WS_URL}/ws/${userId}`);
+    
+    ws.current.onopen = () => {
+      console.log('WebSocket Connected');
+      toast.success('🔔 Real-time notifications enabled');
+    };
+    
+    ws.current.onmessage = (event) => {
+      const notification = JSON.parse(event.data);
+      
+      switch (notification.type) {
+        case 'report_created':
+          toast.success(`✅ ${notification.message}`);
+          break;
+        case 'status_update':
+          toast.info(`📋 ${notification.message}`);
+          break;
+        case 'high_priority_report':
+          toast.warn(`🚨 ${notification.message}`, { autoClose: 8000 });
+          break;
+        default:
+          toast.info(notification.message);
+      }
+    };
+    
+    ws.current.onclose = () => {
+      console.log('WebSocket Disconnected');
+    };
+    
+    ws.current.onerror = (error) => {
+      console.error('WebSocket Error:', error);
+    };
+    
+    return () => {
+      if (ws.current) {
+        ws.current.close();
+      }
+    };
+  }, [userId]);
+  
+  return ws.current;
+};
+
+// Custom map icons for different priorities and statuses
+const createCustomIcon = (priority, status) => {
+  const getColor = () => {
+    if (status === 'resolved') return '#10b981'; // green
+    if (status === 'in_progress') return '#8b5cf6'; // purple
+    if (priority >= 4) return '#ef4444'; // red
+    if (priority >= 3) return '#f59e0b'; // orange
+    return '#3b82f6'; // blue
+  };
+  
+  return L.divIcon({
+    className: 'custom-div-icon',
+    html: `<div style="background-color: ${getColor()}; width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10]
+  });
+};
+
+// Map click handler component
+const MapClickHandler = ({ onLocationSelect }) => {
+  useMapEvents({
+    click(e) {
+      const { lat, lng } = e.latlng;
+      onLocationSelect(lat, lng);
+      toast.info(`📍 Location selected: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    },
+  });
+  return null;
+};
+
 // Utility Components
 const LoadingSpinner = () => (
   <div className="flex justify-center items-center py-8">
