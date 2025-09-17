@@ -515,6 +515,8 @@ const ReportForm = ({ currentUser }) => {
   const [imagePreview, setImagePreview] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [selectedCoords, setSelectedCoords] = useState(null);
+  const [showMap, setShowMap] = useState(false);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -536,6 +538,15 @@ const ReportForm = ({ currentUser }) => {
     }
   };
 
+  const handleLocationSelect = (lat, lng) => {
+    setSelectedCoords({ lat, lng });
+    // Reverse geocoding simulation (in real app, use a geocoding service)
+    setFormData(prev => ({
+      ...prev,
+      location: prev.location || `Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -546,6 +557,12 @@ const ReportForm = ({ currentUser }) => {
       formDataToSend.append('description', formData.description);
       formDataToSend.append('location', formData.location);
       formDataToSend.append('user_id', currentUser.id);
+      
+      if (selectedCoords) {
+        formDataToSend.append('latitude', selectedCoords.lat.toString());
+        formDataToSend.append('longitude', selectedCoords.lng.toString());
+      }
+      
       if (formData.issue_type) {
         formDataToSend.append('issue_type', formData.issue_type);
       }
@@ -568,9 +585,11 @@ const ReportForm = ({ currentUser }) => {
       });
       setSelectedImage(null);
       setImagePreview(null);
+      setSelectedCoords(null);
+      toast.success('🎉 Report submitted successfully! AI is analyzing your submission.');
     } catch (error) {
       console.error('Error submitting report:', error);
-      alert('Error submitting report. Please try again.');
+      toast.error('❌ Error submitting report. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -587,7 +606,8 @@ const ReportForm = ({ currentUser }) => {
           </div>
           <h3 className="text-lg font-medium text-green-900 mb-2">Report Submitted Successfully!</h3>
           <p className="text-green-700 mb-4">
-            Your issue has been reported and will be analyzed by our AI system for automatic routing to the appropriate department.
+            Your issue has been reported and analyzed by our AI system for automatic routing to the appropriate department. 
+            You'll receive real-time notifications about status updates.
           </p>
           <button
             onClick={() => setSubmitted(false)}
@@ -600,111 +620,179 @@ const ReportForm = ({ currentUser }) => {
     );
   }
 
+  const defaultCenter = [28.6139, 77.2090]; // Default coordinates
+
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">Report a Civic Issue</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Help improve your community by reporting issues. AI will automatically categorize and route your report.
-          </p>
+    <div className="max-w-4xl mx-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Form Section */}
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-medium text-gray-900">Report a Civic Issue</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Help improve your community by reporting issues. AI will automatically categorize and route your report.
+            </p>
+          </div>
+          
+          <form onSubmit={handleSubmit} className="px-6 py-4 space-y-6">
+            <div>
+              <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+                Issue Title *
+              </label>
+              <input
+                type="text"
+                name="title"
+                id="title"
+                required
+                value={formData.title}
+                onChange={handleInputChange}
+                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                placeholder="Brief description of the issue"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+                Detailed Description *
+              </label>
+              <textarea
+                name="description"
+                id="description"
+                rows={4}
+                required
+                value={formData.description}
+                onChange={handleInputChange}
+                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                placeholder="Provide detailed information about the issue"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="location" className="block text-sm font-medium text-gray-700">
+                Location *
+              </label>
+              <input
+                type="text"
+                name="location"
+                id="location"
+                required
+                value={formData.location}
+                onChange={handleInputChange}
+                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                placeholder="Street address or landmark"
+              />
+              {selectedCoords && (
+                <p className="text-xs text-green-600 mt-1">
+                  📍 Coordinates: {selectedCoords.lat.toFixed(4)}, {selectedCoords.lng.toFixed(4)}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowMap(!showMap)}
+                className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
+              >
+                {showMap ? '🗺️ Hide Map' : '🗺️ Select Location on Map'}
+              </button>
+            </div>
+            
+            <div>
+              <label htmlFor="image" className="block text-sm font-medium text-gray-700">
+                Upload Image (Optional)
+              </label>
+              <p className="text-xs text-gray-500 mb-2">AI will analyze the image to help categorize the issue</p>
+              <input
+                type="file"
+                name="image"
+                id="image"
+                accept="image/*"
+                onChange={handleImageChange}
+                className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              {imagePreview && (
+                <div className="mt-2">
+                  <img src={imagePreview} alt="Preview" className="max-w-xs rounded-lg shadow-sm" />
+                </div>
+              )}
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    title: '',
+                    description: '',
+                    location: '',
+                    issue_type: ''
+                  });
+                  setSelectedImage(null);
+                  setImagePreview(null);
+                  setSelectedCoords(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Clear
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                {submitting ? 'Submitting...' : 'Submit Report'}
+              </button>
+            </div>
+          </form>
         </div>
-        
-        <form onSubmit={handleSubmit} className="px-6 py-4 space-y-6">
-          <div>
-            <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-              Issue Title *
-            </label>
-            <input
-              type="text"
-              name="title"
-              id="title"
-              required
-              value={formData.title}
-              onChange={handleInputChange}
-              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              placeholder="Brief description of the issue"
-            />
+
+        {/* Map Section */}
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900">Location Selection</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              {showMap ? 'Click on the map to select precise location' : 'Enable map to select location visually'}
+            </p>
           </div>
           
-          <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-              Detailed Description *
-            </label>
-            <textarea
-              name="description"
-              id="description"
-              rows={4}
-              required
-              value={formData.description}
-              onChange={handleInputChange}
-              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              placeholder="Provide detailed information about the issue"
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="location" className="block text-sm font-medium text-gray-700">
-              Location *
-            </label>
-            <input
-              type="text"
-              name="location"
-              id="location"
-              required
-              value={formData.location}
-              onChange={handleInputChange}
-              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              placeholder="Street address or landmark"
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="image" className="block text-sm font-medium text-gray-700">
-              Upload Image (Optional)
-            </label>
-            <p className="text-xs text-gray-500 mb-2">AI will analyze the image to help categorize the issue</p>
-            <input
-              type="file"
-              name="image"
-              id="image"
-              accept="image/*"
-              onChange={handleImageChange}
-              className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-            />
-            {imagePreview && (
-              <div className="mt-2">
-                <img src={imagePreview} alt="Preview" className="max-w-xs rounded-lg shadow-sm" />
+          {showMap ? (
+            <div style={{ height: '400px' }}>
+              <MapContainer
+                center={defaultCenter}
+                zoom={13}
+                style={{ height: '100%', width: '100%' }}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <MapClickHandler onLocationSelect={handleLocationSelect} />
+                {selectedCoords && (
+                  <Marker position={[selectedCoords.lat, selectedCoords.lng]}>
+                    <Popup>
+                      <div className="text-center">
+                        <p className="font-medium">Selected Location</p>
+                        <p className="text-sm text-gray-600">
+                          {selectedCoords.lat.toFixed(4)}, {selectedCoords.lng.toFixed(4)}
+                        </p>
+                      </div>
+                    </Popup>
+                  </Marker>
+                )}
+              </MapContainer>
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center bg-gray-50">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </div>
+                <p className="text-gray-600">Click "Select Location on Map" to enable map</p>
               </div>
-            )}
-          </div>
-          
-          <div className="flex justify-end space-x-3">
-            <button
-              type="button"
-              onClick={() => {
-                setFormData({
-                  title: '',
-                  description: '',
-                  location: '',
-                  issue_type: ''
-                });
-                setSelectedImage(null);
-                setImagePreview(null);
-              }}
-              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-            >
-              Clear
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {submitting ? 'Submitting...' : 'Submit Report'}
-            </button>
-          </div>
-        </form>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
