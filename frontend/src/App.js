@@ -163,7 +163,126 @@ const PriorityBadge = ({ priority }) => {
   );
 };
 
-// Header Component
+// Reports Map Component
+const ReportsMap = () => {
+  const [mapReports, setMapReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedReport, setSelectedReport] = useState(null);
+
+  useEffect(() => {
+    fetchMapReports();
+  }, []);
+
+  const fetchMapReports = async () => {
+    try {
+      const response = await axios.get(`${API}/reports/map`);
+      setMapReports(response.data);
+    } catch (error) {
+      console.error('Error fetching map reports:', error);
+      toast.error('Failed to load map reports');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <LoadingSpinner />;
+
+  // Default center (can be changed to user's location or city center)
+  const defaultCenter = [28.6139, 77.2090]; // Delhi coordinates as example
+
+  return (
+    <div className="bg-white shadow rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-200">
+        <h2 className="text-lg font-medium text-gray-900">Reports Map</h2>
+        <p className="text-sm text-gray-600 mt-1">
+          Interactive map showing all reported issues ({mapReports.length} reports)
+        </p>
+      </div>
+      
+      <div style={{ height: '500px' }}>
+        <MapContainer
+          center={defaultCenter}
+          zoom={12}
+          style={{ height: '100%', width: '100%' }}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          
+          {mapReports.map((report) => (
+            <Marker
+              key={report.id}
+              position={[report.latitude, report.longitude]}
+              icon={createCustomIcon(report.priority, report.status)}
+              eventHandlers={{
+                click: () => setSelectedReport(report),
+              }}
+            >
+              <Popup>
+                <div className="p-2 max-w-xs">
+                  <h3 className="font-medium text-gray-900 mb-2">{report.title}</h3>
+                  <p className="text-sm text-gray-600 mb-2">{report.description}</p>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Status:</span>
+                      <StatusBadge status={report.status} />
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Priority:</span>
+                      <PriorityBadge priority={report.priority} />
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Department:</span>
+                      <span className="font-medium">{report.department_name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Reported by:</span>
+                      <span>{report.user_name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Date:</span>
+                      <span>{new Date(report.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      </div>
+      
+      <div className="px-6 py-3 bg-gray-50 border-t">
+        <div className="flex items-center justify-between text-sm text-gray-600">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center">
+              <div className="w-3 h-3 bg-red-500 rounded-full mr-1"></div>
+              <span>High Priority</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-3 h-3 bg-orange-500 rounded-full mr-1"></div>
+              <span>Medium Priority</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-3 h-3 bg-blue-500 rounded-full mr-1"></div>
+              <span>Low Priority</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-3 h-3 bg-green-500 rounded-full mr-1"></div>
+              <span>Resolved</span>
+            </div>
+          </div>
+          <button
+            onClick={fetchMapReports}
+            className="text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Refresh Map
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 const Header = ({ currentUser, onSwitchUser, currentView, setCurrentView }) => (
   <header className="bg-white shadow-sm border-b">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
