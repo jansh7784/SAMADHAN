@@ -1191,6 +1191,9 @@ const UserSwitcher = ({ onSelectUser }) => (
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [currentView, setCurrentView] = useState('dashboard');
+  
+  // Initialize WebSocket connection
+  const websocket = useWebSocket(currentUser?.id);
 
   const handleUserSelect = (user) => {
     setCurrentUser(user);
@@ -1224,9 +1227,25 @@ function App() {
           {currentUser.role === 'citizen' && currentView === 'dashboard' && <Dashboard />}
           {currentUser.role === 'citizen' && currentView === 'report' && <ReportForm currentUser={currentUser} />}
           {currentUser.role === 'citizen' && currentView === 'profile' && <UserReports currentUser={currentUser} />}
+          {(currentView === 'map') && <ReportsMap />}
           {currentUser.role === 'admin' && currentView === 'admin' && <AdminDashboard />}
         </div>
       </main>
+      
+      {/* Toast Notifications Container */}
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+        style={{ zIndex: 9999 }}
+      />
     </div>
   );
 }
