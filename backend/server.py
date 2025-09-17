@@ -532,7 +532,52 @@ async def update_report_status(
     history_mongo = prepare_for_mongo(history.dict())
     await db.report_history.insert_one(history_mongo)
     
+    # Send real-time notification to report owner
+    status_notification = {
+        "type": "status_update",
+        "message": f"Your report status changed from {old_status} to {new_status}",
+        "report_id": report_id,
+        "old_status": old_status,
+        "new_status": new_status,
+        "note": note
+    }
+    await manager.send_personal_message(json.dumps(status_notification), report["user_id"])
+    
     return {"message": "Status updated successfully"}
+
+@api_router.get("/reports/map")
+async def get_reports_for_map():
+    """Get reports with coordinates for map display"""
+    reports = await db.reports.find({
+        "latitude": {"$exists": True, "$ne": None},
+        "longitude": {"$exists": True, "$ne": None}
+    }).to_list(1000)
+    
+    map_reports = []
+    for report in reports:
+        # Get user info
+        user = await db.users.find_one({"id": report["user_id"]})
+        # Get department info
+        department = None
+        if report.get("auto_routed_department_id"):
+            department = await db.departments.find_one({"id": report["auto_routed_department_id"]})
+        
+        map_reports.append({
+            "id": report["id"],
+            "title": report["title"],
+            "description": report["description"],
+            "location": report["location"],
+            "latitude": report["latitude"],
+            "longitude": report["longitude"],
+            "status": report["status"],
+            "priority": report["priority"],
+            "issue_type": report["issue_type"],
+            "created_at": report["created_at"],
+            "user_name": user["name"] if user else "Unknown",
+            "department_name": department["name"] if department else "Unassigned"
+        })
+    
+    return map_reports
 
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats():
