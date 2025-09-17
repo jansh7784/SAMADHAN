@@ -7,6 +7,39 @@
   @apply text-gray-900;
 }
 
+/* Custom map icon styles */
+.custom-div-icon {
+  background: none !important;
+  border: none !important;
+}
+
+/* Leaflet map container styles */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+}
+
+/* Toast notification customization */
+.Toastify__toast {
+  border-radius: 8px !important;
+}
+
+.Toastify__toast--success {
+  background: #10b981 !important;
+}
+
+.Toastify__toast--error {
+  background: #ef4444 !important;
+}
+
+.Toastify__toast--warning {
+  background: #f59e0b !important;
+}
+
+.Toastify__toast--info {
+  background: #3b82f6 !important;
+}
+
 /* Custom form inputs */
 input[type="text"],
 input[type="email"],
@@ -165,6 +198,24 @@ input[type="file"] {
   @apply bg-red-50 border border-red-200 rounded-lg p-6 text-center;
 }
 
+/* Map-specific styles */
+.map-legend {
+  @apply flex items-center space-x-4 text-sm text-gray-600;
+}
+
+.map-legend-item {
+  @apply flex items-center;
+}
+
+.map-legend-dot {
+  @apply w-3 h-3 rounded-full mr-1;
+}
+
+/* Notification styles */
+.notification-badge {
+  @apply absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full;
+}
+
 /* Mobile responsiveness */
 @media (max-width: 640px) {
   .mobile-stack {
@@ -177,6 +228,16 @@ input[type="file"] {
   
   .mobile-text-sm {
     @apply text-sm;
+  }
+  
+  /* Mobile map adjustments */
+  .leaflet-control-container {
+    font-size: 14px;
+  }
+  
+  .leaflet-popup-content {
+    margin: 8px 12px;
+    max-width: 250px;
   }
 }
 
@@ -198,6 +259,16 @@ input[type="file"] {
   }
 }
 
+/* Map popup customization */
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.leaflet-popup-tip {
+  background: white;
+}
+
 /* Utility classes */
 .text-truncate {
   @apply truncate;
@@ -213,4 +284,37 @@ input[type="file"] {
 
 .shadow-card-hover {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Animation for real-time updates */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* Connection status indicator */
+.connection-status {
+  @apply fixed top-4 right-4 px-3 py-1 rounded-full text-xs font-medium z-50;
+}
+
+.connection-status.connected {
+  @apply bg-green-100 text-green-800;
+}
+
+.connection-status.disconnected {
+  @apply bg-red-100 text-red-800;
+}
+
+.connection-status.connecting {
+  @apply bg-yellow-100 text-yellow-800;
 }
