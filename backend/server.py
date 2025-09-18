@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends, WebSocket, WebSocketDisconnect
+from contextlib import asynccontextmanager
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -26,7 +27,52 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get('DB_NAME', 'civic_reports')]
 
 # Create the main app without a prefix
-app = FastAPI(title="Civic Issue Reporting API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    try:
+        # Initialize departments
+        existing_count = await db.departments.count_documents({})
+        if existing_count == 0:
+            department_objects = [Department(**dept_data) for dept_data in DEPARTMENTS]
+            department_dicts = [prepare_for_mongo(dept.dict()) for dept in department_objects]
+            await db.departments.insert_many(department_dicts)
+            logger.info(f"Initialized {len(DEPARTMENTS)} departments")
+
+        # Add demo users
+        demo_users = [
+            User(name="Alice", email="alice@example.com", role="citizen"),
+            User(name="Bob", email="bob@example.com", role="citizen"),
+        ]
+        await db.users.insert_many([prepare_for_mongo(u.dict()) for u in demo_users])
+
+        # Get department IDs
+        departments = await db.departments.find().to_list(100)
+        dept_map = {d["name"]: d["id"] for d in departments}
+
+        # Add demo reports
+        demo_reports = [
+            # High priority
+            Report(user_id=demo_users[0].id, title="Major Water Leak", description="Water is flooding the street.", location="Main St", latitude=28.6139, longitude=77.2090, issue_type="water leak", priority=5, severity_score=0.95, auto_routed_department_id=dept_map.get("Utilities Department")),
+            # Medium priority
+            Report(user_id=demo_users[1].id, title="Broken Streetlight", description="Streetlight not working.", location="Park Ave", latitude=28.6140, longitude=77.2091, issue_type="lighting", priority=3, severity_score=0.6, auto_routed_department_id=dept_map.get("Public Works Department")),
+            Report(user_id=demo_users[0].id, title="Overflowing Garbage Bin", description="Garbage bin is overflowing.", location="Market Rd", latitude=28.6150, longitude=77.2092, issue_type="garbage", priority=3, severity_score=0.5, auto_routed_department_id=dept_map.get("Sanitation Department")),
+            Report(user_id=demo_users[1].id, title="Pothole", description="Large pothole on the road.", location="Highway 1", latitude=28.6160, longitude=77.2093, issue_type="road damage", priority=3, severity_score=0.7, auto_routed_department_id=dept_map.get("Public Works Department")),
+            # Low priority
+            Report(user_id=demo_users[0].id, title="Graffiti on Wall", description="Graffiti spotted.", location="School St", latitude=28.6170, longitude=77.2094, issue_type="graffiti", priority=2, severity_score=0.3, auto_routed_department_id=dept_map.get("Code Enforcement")),
+            Report(user_id=demo_users[1].id, title="Park Bench Broken", description="Bench in park is broken.", location="Central Park", latitude=28.6180, longitude=77.2095, issue_type="bench", priority=2, severity_score=0.2, auto_routed_department_id=dept_map.get("Parks & Recreation")),
+            Report(user_id=demo_users[0].id, title="Tree Branch Fallen", description="Branch blocking sidewalk.", location="Elm St", latitude=28.6190, longitude=77.2096, issue_type="tree", priority=2, severity_score=0.4, auto_routed_department_id=dept_map.get("Public Works Department")),
+            Report(user_id=demo_users[1].id, title="Dog Barking", description="Dog barking at night.", location="Maple St", latitude=28.6200, longitude=77.2097, issue_type="noise", priority=2, severity_score=0.1, auto_routed_department_id=dept_map.get("Code Enforcement")),
+        ]
+        await db.reports.insert_many([prepare_for_mongo(r.dict()) for r in demo_reports])
+        logger.info("Demo issues added to database.")
+    except Exception as e:
+        logger.error(f"Failed to initialize departments or demo data: {e}")
+    yield
+    # Shutdown logic
+    client.close()
+
+app = FastAPI(title="Civic Issue Reporting API", lifespan=lifespan)
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -127,100 +173,74 @@ class AIAnalysisService:
         self.gemini_api_key = os.environ.get('GEMINI_API_KEY')
         
     async def analyze_issue_with_ai(self, description: str, image_base64: Optional[str] = None):
-        """Analyze issue description and image to determine department, priority, and issue type"""
+        """Analyze issue description and image to determine department, priority, and issue type using Gemini API"""
+        import httpx
+        prompt = f"""
+        You are an AI assistant specialized in analyzing civic issues and municipal problems.
+        Your task is to analyze user-reported civic issues and provide structured output for municipal routing.
+        Based on the description and image (if provided), you should:
+        1. Identify the most appropriate municipal department
+        2. Determine the priority level (1-5, where 5 is most urgent)
+        3. Classify the issue type
+        4. Calculate a severity score (0.0-1.0)
+        Available departments:
+        - Public Works Department (roads, infrastructure, drainage)
+        - Sanitation Department (garbage, waste, cleanliness)
+        - Utilities Department (water, electricity, utilities)
+        - Planning & Zoning Department (permits, zoning, development)
+        - Engineering & Construction (construction issues, building problems)
+        - Health Department (health hazards, public health)
+        - Police Department (safety, security, crime)
+        - Fire Department (fire hazards, emergency situations)
+        - Parks & Recreation (parks, recreational facilities)
+        - Code Enforcement (violations, code compliance)
+        - Emergency Management (disasters, emergencies)
+        - Information Technology (technology issues)
+        - Economic Development (business, economic issues)
+        - Transportation Department (traffic, transportation)
+        - Environmental Services (environmental issues, pollution)
+        Respond ONLY with JSON in this exact format:
+        {{
+          "department": "Department Name",
+          "issue_type": "specific issue category",
+          "priority": 3,
+          "severity_score": 0.7,
+          "reasoning": "Brief explanation of the analysis"
+        }}
+        """
+        if image_base64:
+            prompt += "\n\nImage (base64): " + image_base64
+        prompt += f"\n\nDescription: {description}"
+
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+        headers = {"Content-Type": "application/json"}
+        api_key = self.gemini_api_key
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
         try:
-            # Import here to avoid issues if emergentintegrations is not installed
-            from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
-            
-            # Create AI chat instance
-            chat = LlmChat(
-                api_key=self.gemini_api_key,
-                session_id=f"analysis_{uuid.uuid4()}",
-                system_message="""You are an AI assistant specialized in analyzing civic issues and municipal problems. 
-                Your task is to analyze user-reported civic issues and provide structured output for municipal routing.
-                
-                Based on the description and image (if provided), you should:
-                1. Identify the most appropriate municipal department
-                2. Determine the priority level (1-5, where 5 is most urgent)
-                3. Classify the issue type
-                4. Calculate a severity score (0.0-1.0)
-                
-                Available departments:
-                - Public Works Department (roads, infrastructure, drainage)
-                - Sanitation Department (garbage, waste, cleanliness)
-                - Utilities Department (water, electricity, utilities)
-                - Planning & Zoning Department (permits, zoning, development)
-                - Engineering & Construction (construction issues, building problems)
-                - Health Department (health hazards, public health)
-                - Police Department (safety, security, crime)
-                - Fire Department (fire hazards, emergency situations)
-                - Parks & Recreation (parks, recreational facilities)
-                - Code Enforcement (violations, code compliance)
-                - Emergency Management (disasters, emergencies)
-                - Information Technology (technology issues)
-                - Economic Development (business, economic issues)
-                - Transportation Department (traffic, transportation)
-                - Environmental Services (environmental issues, pollution)
-                
-                Respond ONLY with JSON in this exact format:
-                {
-                  "department": "Department Name",
-                  "issue_type": "specific issue category",
-                  "priority": 3,
-                  "severity_score": 0.7,
-                  "reasoning": "Brief explanation of the analysis"
-                }"""
-            ).with_model("gemini", "gemini-2.0-flash")
-            
-            # Prepare message
-            message_text = f"Analyze this civic issue: {description}"
-            file_contents = []
-            
-            if image_base64:
-                image_content = ImageContent(image_base64=image_base64)
-                file_contents.append(image_content)
-                message_text += "\n\nPlease also analyze the attached image to help with classification."
-            
-            user_message = UserMessage(
-                text=message_text,
-                file_contents=file_contents if file_contents else None
-            )
-            
-            # Get AI response
-            response = await chat.send_message(user_message)
-            
-            # Parse JSON response - handle markdown code blocks
-            try:
-                # Remove markdown code blocks if present
-                clean_response = response.strip()
+            async with httpx.AsyncClient() as client:
+                response = await client.post(f"{url}?key={api_key}", json=payload, headers=headers, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                # Extract the model's reply
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                clean_response = text.strip()
                 if clean_response.startswith('```json'):
-                    clean_response = clean_response[7:]  # Remove ```json
+                    clean_response = clean_response[7:]
                 if clean_response.endswith('```'):
-                    clean_response = clean_response[:-3]  # Remove ```
+                    clean_response = clean_response[:-3]
                 clean_response = clean_response.strip()
-                
                 analysis = json.loads(clean_response)
                 return analysis
-            except json.JSONDecodeError as e:
-                logging.error(f"JSON parsing failed for response: {response[:200]}... Error: {e}")
-                # Fallback if response is not proper JSON
-                return {
-                    "department": "Public Works Department",
-                    "issue_type": "general",
-                    "priority": 2,
-                    "severity_score": 0.5,
-                    "reasoning": f"AI analysis JSON parsing failed: {str(e)}"
-                }
-                
         except Exception as e:
-            logging.error(f"AI analysis failed: {e}")
-            # Fallback analysis
+            logging.error(f"Gemini API analysis failed: {e}")
             return {
                 "department": "Public Works Department",
                 "issue_type": "general",
                 "priority": 2,
                 "severity_score": 0.5,
-                "reasoning": f"AI analysis failed: {str(e)}"
+                "reasoning": f"Gemini API analysis failed: {str(e)}"
             }
 
 ai_service = AIAnalysisService()
@@ -624,19 +644,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize departments on startup"""
-    try:
-        existing_count = await db.departments.count_documents({})
-        if existing_count == 0:
-            department_objects = [Department(**dept_data) for dept_data in DEPARTMENTS]
-            department_dicts = [prepare_for_mongo(dept.dict()) for dept in department_objects]
-            await db.departments.insert_many(department_dicts)
-            logger.info(f"Initialized {len(DEPARTMENTS)} departments")
-    except Exception as e:
-        logger.error(f"Failed to initialize departments: {e}")
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
