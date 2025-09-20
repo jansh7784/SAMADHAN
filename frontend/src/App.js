@@ -822,6 +822,9 @@ const ReportForm = ({ currentUser }) => {
 const UserReports = ({ currentUser }) => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [expandedReportId, setExpandedReportId] = useState(null);
+  const [reportDetails, setReportDetails] = useState({});
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
   useEffect(() => {
     fetchUserReports();
@@ -836,6 +839,29 @@ const UserReports = ({ currentUser }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadReportDetails = async (reportId) => {
+    setLoadingDetails(true);
+    try {
+      const response = await axios.get(`${API}/reports/${reportId}`);
+      setReportDetails((prev) => ({ ...prev, [reportId]: response.data }));
+    } catch (error) {
+      console.error('Error loading report details:', error);
+      toast.error('Failed to load report details');
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const handleToggleDetails = async (reportId) => {
+    if (expandedReportId === reportId) {
+      setExpandedReportId(null);
+      return;
+    }
+
+    setExpandedReportId(reportId);
+    await loadReportDetails(reportId);
   };
 
   if (loading) return <LoadingSpinner />;
@@ -873,6 +899,63 @@ const UserReports = ({ currentUser }) => {
                     <StatusBadge status={report.status} />
                   </div>
                 </div>
+                <div className="mt-3">
+                  <button
+                    onClick={() => handleToggleDetails(report.id)}
+                    className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    {expandedReportId === report.id ? 'Hide Details' : 'View Details'}
+                  </button>
+                </div>
+                {expandedReportId === report.id && (
+                  <div className="mt-4 border-t border-gray-200 pt-4">
+                    {loadingDetails ? (
+                      <p className="text-sm text-gray-500">Loading details...</p>
+                    ) : (
+                      <>
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-800">Attachments</h4>
+                          {reportDetails[report.id]?.attachments?.length ? (
+                            <div className="mt-2 flex flex-wrap gap-4">
+                              {reportDetails[report.id].attachments.map((attachment) => (
+                                <div key={attachment.id} className="w-32">
+                                  <img
+                                    src={attachment.file_url}
+                                    alt="Report attachment"
+                                    className="h-24 w-full object-cover rounded border border-gray-200"
+                                  />
+                                  <p className="mt-1 text-xs text-gray-500 truncate">{attachment.content_type}</p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-gray-500">No attachments available yet.</p>
+                          )}
+                        </div>
+                        <div className="mt-4">
+                          <h4 className="text-sm font-semibold text-gray-800">History</h4>
+                          {reportDetails[report.id]?.history?.length ? (
+                            <ul className="mt-2 space-y-2">
+                              {reportDetails[report.id].history.map((entry) => (
+                                <li key={entry.id} className="text-sm text-gray-600">
+                                  <div className="font-medium text-gray-800">
+                                    {entry.old_status ? `${entry.old_status} → ${entry.new_status}` : entry.new_status}
+                                  </div>
+                                  {entry.note && <div className="text-gray-600">{entry.note}</div>}
+                                  <div className="text-xs text-gray-400">
+                                    {entry.created_at ? new Date(entry.created_at).toLocaleString() : ''}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="mt-2 text-sm text-gray-500">No history available.</p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             ))
           ) : (
@@ -894,6 +977,11 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [statusDrafts, setStatusDrafts] = useState({});
+  const [isDetailPanelOpen, setIsDetailPanelOpen] = useState(false);
+  const [selectedReportDetails, setSelectedReportDetails] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [activeReportId, setActiveReportId] = useState(null);
 
   useEffect(() => {
     fetchAdminData();
@@ -917,20 +1005,116 @@ const AdminDashboard = () => {
     }
   };
 
-  const updateReportStatus = async (reportId, newStatus) => {
+  const handleStatusChange = (reportId, status) => {
+    const currentReport = reports.find((r) => r.id === reportId);
+    setStatusDrafts((prev) => {
+      const existing = prev[reportId] || {};
+      const updated = { ...existing, newStatus: status };
+      if (!['resolved', 'closed'].includes(status)) {
+        if (existing.preview) {
+          URL.revokeObjectURL(existing.preview);
+        }
+        updated.file = null;
+        updated.preview = null;
+      }
+
+      if (currentReport && status === currentReport.status && !updated.file) {
+        const newDrafts = { ...prev };
+        delete newDrafts[reportId];
+        return newDrafts;
+      }
+
+      return { ...prev, [reportId]: updated };
+    });
+  };
+
+  const handleFileChange = (reportId, file) => {
+    const currentReport = reports.find((r) => r.id === reportId);
+    setStatusDrafts((prev) => {
+      const existing = prev[reportId] || {};
+      if (existing.preview) {
+        URL.revokeObjectURL(existing.preview);
+      }
+
+      if (!file) {
+        const updatedDrafts = { ...prev, [reportId]: { ...existing, file: null, preview: null } };
+        const draftStatus = existing.newStatus ?? currentReport?.status;
+        if (currentReport && draftStatus === currentReport.status) {
+          delete updatedDrafts[reportId];
+        }
+        return updatedDrafts;
+      }
+
+      const previewUrl = URL.createObjectURL(file);
+      return { ...prev, [reportId]: { ...existing, file, preview: previewUrl } };
+    });
+  };
+
+  const loadAdminReportDetails = async (reportId) => {
+    setDetailsLoading(true);
+    try {
+      const response = await axios.get(`${API}/reports/${reportId}`);
+      setSelectedReportDetails(response.data);
+    } catch (error) {
+      console.error('Error loading report details:', error);
+      toast.error('Failed to load report details');
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const viewReportDetails = async (reportId) => {
+    setActiveReportId(reportId);
+    setIsDetailPanelOpen(true);
+    await loadAdminReportDetails(reportId);
+  };
+
+  const closeReportDetails = () => {
+    setIsDetailPanelOpen(false);
+    setSelectedReportDetails(null);
+    setActiveReportId(null);
+  };
+
+  const updateReportStatus = async (reportId) => {
+    const draft = statusDrafts[reportId];
+    const currentReport = reports.find((r) => r.id === reportId);
+    const newStatus = draft?.newStatus ?? currentReport?.status;
+    if (!newStatus) return;
+
     try {
       const formData = new FormData();
       formData.append('new_status', newStatus);
       formData.append('actor_id', MOCK_ADMIN.id);
       formData.append('note', `Status updated to ${newStatus} by admin`);
-      
+
+      if (draft?.file) {
+        formData.append('resolution_image', draft.file);
+      }
+
       await axios.patch(`${API}/reports/${reportId}/status`, formData);
-      fetchAdminData(); // Refresh data
+      toast.success('Report status updated');
+
+      if (draft?.preview) {
+        URL.revokeObjectURL(draft.preview);
+      }
+
+      setStatusDrafts((prev) => {
+        const updatedDrafts = { ...prev };
+        delete updatedDrafts[reportId];
+        return updatedDrafts;
+      });
+
+      fetchAdminData();
+      if (isDetailPanelOpen && activeReportId === reportId) {
+        await loadAdminReportDetails(reportId);
+      }
     } catch (error) {
       console.error('Error updating report status:', error);
-      alert('Error updating status');
+      toast.error('Error updating status');
     }
   };
+
+  const detail = selectedReportDetails;
 
   if (loading) return <LoadingSpinner />;
 
@@ -1084,6 +1268,11 @@ const AdminDashboard = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {reports.map((report) => {
                 const department = departments.find(d => d.id === report.auto_routed_department_id);
+                const draft = statusDrafts[report.id] || {};
+                const selectedStatus = draft.newStatus ?? report.status;
+                const requiresAttachment = ['resolved', 'closed'].includes(selectedStatus);
+                const hasChanges = selectedStatus !== report.status || !!draft.file;
+
                 return (
                   <tr key={report.id}>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -1105,17 +1294,57 @@ const AdminDashboard = () => {
                       {department ? department.name : 'Unassigned'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <select
-                        value={report.status}
-                        onChange={(e) => updateReportStatus(report.id, e.target.value)}
-                        className="text-xs border-gray-300 rounded-md"
-                      >
-                        <option value="pending">Pending</option>
-                        <option value="assigned">Assigned</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="closed">Closed</option>
-                      </select>
+                      <div className="space-y-2">
+                        <select
+                          value={selectedStatus}
+                          onChange={(e) => handleStatusChange(report.id, e.target.value)}
+                          className="text-xs border-gray-300 rounded-md"
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="assigned">Assigned</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="resolved">Resolved</option>
+                          <option value="closed">Closed</option>
+                        </select>
+
+                        {requiresAttachment && (
+                          <div className="space-y-2">
+                            <input
+                              key={`${report.id}-${draft.file ? 'file' : 'nofile'}`}
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleFileChange(report.id, e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+                              className="block w-full text-xs text-gray-600"
+                            />
+                            {draft.preview && (
+                              <img
+                                src={draft.preview}
+                                alt="Resolution proof preview"
+                                className="h-16 w-24 object-cover rounded border border-gray-200"
+                              />
+                            )}
+                            {!draft.file && (
+                              <p className="text-xs text-gray-500">Attach proof when resolving or closing a report.</p>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => updateReportStatus(report.id)}
+                            disabled={!hasChanges}
+                            className={`px-3 py-1 rounded text-xs text-white ${hasChanges ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed'}`}
+                          >
+                            Update
+                          </button>
+                          <button
+                            onClick={() => viewReportDetails(report.id)}
+                            className="px-3 py-1 rounded text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            Details
+                          </button>
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1123,13 +1352,91 @@ const AdminDashboard = () => {
             </tbody>
           </table>
         </div>
-        
+
         {reports.length === 0 && (
           <div className="px-6 py-8 text-center text-gray-500">
             <p>No reports found matching the selected criteria</p>
           </div>
         )}
       </div>
+
+      {isDetailPanelOpen && (
+        <div className="bg-white shadow rounded-lg">
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h4 className="text-lg font-medium text-gray-900">Report Details</h4>
+            <button
+              onClick={closeReportDetails}
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            >
+              Close
+            </button>
+          </div>
+          <div className="px-6 py-4">
+            {detailsLoading ? (
+              <p className="text-sm text-gray-500">Loading details...</p>
+            ) : detail?.report ? (
+              <div className="space-y-4">
+                <div>
+                  <h5 className="text-sm font-semibold text-gray-800">Summary</h5>
+                  <p className="text-sm text-gray-600 mt-1">{detail.report.description}</p>
+                  <div className="mt-2 text-xs text-gray-500 space-y-1">
+                    <div>📍 {detail.report.location}</div>
+                    <div>📋 {detail.report.issue_type}</div>
+                    <div>📅 {detail.report.created_at ? new Date(detail.report.created_at).toLocaleString() : ''}</div>
+                  </div>
+                  <div className="mt-2 flex items-center space-x-2">
+                    <PriorityBadge priority={detail.report.priority} />
+                    <StatusBadge status={detail.report.status} />
+                  </div>
+                </div>
+
+                <div>
+                  <h5 className="text-sm font-semibold text-gray-800">Attachments</h5>
+                  {detail.attachments?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-4">
+                      {detail.attachments.map((attachment) => (
+                        <div key={attachment.id} className="w-32">
+                          <img
+                            src={attachment.file_url}
+                            alt="Report attachment"
+                            className="h-24 w-full object-cover rounded border border-gray-200"
+                          />
+                          <p className="mt-1 text-xs text-gray-500 truncate">{attachment.content_type}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-gray-500">No attachments uploaded.</p>
+                  )}
+                </div>
+
+                <div>
+                  <h5 className="text-sm font-semibold text-gray-800">History</h5>
+                  {detail.history?.length ? (
+                    <ul className="mt-2 space-y-2">
+                      {detail.history.map((entry) => (
+                        <li key={entry.id} className="text-sm text-gray-600">
+                          <div className="font-medium text-gray-800">
+                            {entry.old_status ? `${entry.old_status} → ${entry.new_status}` : entry.new_status}
+                          </div>
+                          {entry.note && <div className="text-gray-600">{entry.note}</div>}
+                          <div className="text-xs text-gray-400">
+                            {entry.created_at ? new Date(entry.created_at).toLocaleString() : ''}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-gray-500">No history recorded.</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">Select a report to view details.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
