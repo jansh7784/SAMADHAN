@@ -500,7 +500,11 @@ async def get_report(report_id: str):
         raise HTTPException(status_code=404, detail="Report not found")
     
     # Get attachments
-    attachments = await db.attachments.find({"report_id": report_id}).to_list(100)
+    attachment_docs = await db.attachments.find({"report_id": report_id}).to_list(100)
+    attachments = []
+    for att in attachment_docs:
+        clean_attachment = {k: v for k, v in att.items() if k != "_id"}
+        attachments.append(Attachment(**clean_attachment))
     
     # Get history
     history = await db.report_history.find({"report_id": report_id}).sort("created_at", 1).to_list(100)
@@ -515,7 +519,7 @@ async def get_report(report_id: str):
     
     return {
         "report": Report(**parse_from_mongo(report)),
-        "attachments": [Attachment(**att) for att in attachments],
+        "attachments": attachments,
         "history": [ReportHistory(**parse_from_mongo(hist)) for hist in history],
         "user": User(**parse_from_mongo(user)) if user else None,
         "department": Department(**department) if department else None
@@ -526,7 +530,8 @@ async def update_report_status(
     report_id: str,
     new_status: str = Form(...),
     actor_id: str = Form(...),
-    note: str = Form("")
+    note: str = Form(""),
+    resolution_image: Optional[UploadFile] = File(None)
 ):
     """Update report status"""
     report = await db.reports.find_one({"id": report_id})
@@ -540,18 +545,38 @@ async def update_report_status(
         {"id": report_id},
         {"$set": {"status": new_status}}
     )
-    
+
+    # Store resolution attachment if provided
+    attachment = None
+    if resolution_image:
+        file_bytes = await resolution_image.read()
+        if file_bytes:
+            encoded_file = base64.b64encode(file_bytes).decode("utf-8")
+            attachment = Attachment(
+                report_id=report_id,
+                file_url=f"data:{resolution_image.content_type};base64,{encoded_file}",
+                content_type=resolution_image.content_type,
+                size=len(file_bytes)
+            )
+            attachment_mongo = prepare_for_mongo(attachment.dict())
+            await db.attachments.insert_one(attachment_mongo)
+
+    history_note = note.strip()
+    if attachment:
+        proof_note = "Proof attachment uploaded."
+        history_note = f"{history_note} {proof_note}".strip() if history_note else proof_note
+
     # Add to history
     history = ReportHistory(
         report_id=report_id,
         actor_id=actor_id,
         old_status=old_status,
         new_status=new_status,
-        note=note
+        note=history_note
     )
     history_mongo = prepare_for_mongo(history.dict())
     await db.report_history.insert_one(history_mongo)
-    
+
     # Send real-time notification to report owner
     status_notification = {
         "type": "status_update",
@@ -559,7 +584,7 @@ async def update_report_status(
         "report_id": report_id,
         "old_status": old_status,
         "new_status": new_status,
-        "note": note
+        "note": history_note
     }
     await manager.send_personal_message(json.dumps(status_notification), report["user_id"])
     
